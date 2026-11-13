@@ -1,6 +1,9 @@
 # Minesweeper-Clone-Using-Phaser
-A simple Minesweeper clone built using JavaScript and the Phaser.js game framework.
+
+A simple Minesweeper clone built using **JavaScript** and the **Phaser.js** game framework.
+
 This project was created as a beginner-friendly exercise to practice game logic, grid systems, and interactive UI handling.
+
 ---
 # Features
 - Classic 9x9 Minesweeper grid
