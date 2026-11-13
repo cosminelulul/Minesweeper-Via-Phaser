@@ -1,4 +1,4 @@
-# Minesweeper-Clone-Using-Phaser
+# Minesweeper-Via-Phaser
 
 A simple Minesweeper clone built using **JavaScript** and the **Phaser.js** game framework.
 
@@ -17,7 +17,7 @@ This project was created as a beginner-friendly exercise to practice game logic,
 ---
 # Running the Project
 ```
-git clone https://github.com/cosminelulul/Minesweeper-Clone-Using-Phaser
+git clone https://github.com/cosminelulul/Minesweeper-Via-Phaser
 Open index.html in your browser
 Note: No build tools or dependencies required — runs directly in the browser.
 ```
