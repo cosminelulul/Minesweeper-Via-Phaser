@@ -50,15 +50,13 @@ Bigger grids get longer grace periods, so a bigger board never punishes you for 
 | 1.8x       | 35 - 50 sec | 120 - 180 sec | 240 - 360 sec |
 | 1.0x       | 50+ sec    | 180+ sec       | 360+ sec     |
 ---
-# Running the Project
+# Running the Project on your Machine
 ```
 git clone https://github.com/cosminelulul/Minesweeper-Via-Phaser
 Open index.html in your browser
 ```
 Note: No build tools or dependencies required — runs directly in the browser.
 (Phaser is loaded from a CDN, so you need an internet connection.)
-
-Hosted with GitHub Pages: Settings → Pages → Deploy from a branch → `main` / root.
 
 ---
 # Project Structure
