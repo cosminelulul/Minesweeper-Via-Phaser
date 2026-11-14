@@ -132,7 +132,7 @@ function createSettingsScene() {
     ], 20));
 
     sweetsLines.push(addColoredLine(this, centerX, 453, [
-        { text: "and ", color: plain },
+        { text: "or ", color: plain },
         { text: "Vanilla Cookies", color: vanilla },
         { text: "?", color: plain }
     ], 20));
