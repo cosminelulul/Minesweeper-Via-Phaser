@@ -1,25 +1,60 @@
 // Constants
 
-const ROWS = 9;
-const COLS = 9;
-const TOTAL_MINES = 10; 
+const MENU_WIDTH = 640;
+const MENU_HEIGHT = 720;
 
-const CELL_SIZE = 80; 
-const UI_HEIGHT = 120;
-const TOP_UI_HEIGHT = 120;
+const UI_HEIGHT = 100;
+const TOP_UI_HEIGHT = 130;
 
 const BTN_WIDTH = 280;
 const BTN_HEIGHT = 80;
 
-const config = {
-    type: Phaser.AUTO,
-    width: COLS * CELL_SIZE,
-    height: TOP_UI_HEIGHT + (ROWS * CELL_SIZE) + UI_HEIGHT,
-    backgroundColor: '#1B1B1B',
-    scene: {
-        create: createScene
+const LONG_PRESS_MS = 400; // Touch screens: hold this long to place a flag
+
+const STORAGE_KEY = 'minesweeperBeaten';
+const SETTINGS_KEY = 'minesweeperSettings';
+
+const GITHUB_URL = 'https://github.com/cosminelulul';
+
+// Grid size, mine count, cell size (in pixels) and score timings for each difficulty
+// multiplierTimes: the second at which each multiplier tier ends (see MULTIPLIER_TIERS)
+
+const DIFFICULTIES = {
+    easy: {
+        label: 'EASY', rows: 9, cols: 9, mines: 10, cellSize: 64, color: '#50fa7b',
+        multiplierTimes: [5, 12, 22, 35, 50]
+    },
+    medium: {
+        label: 'MEDIUM', rows: 16, cols: 16, mines: 40, cellSize: 38, color: '#ffb86c',
+        multiplierTimes: [15, 40, 75, 120, 180]
+    },
+    hard: {
+        label: 'HARD', rows: 16, cols: 30, mines: 99, cellSize: 32, color: '#ff5555',
+        multiplierTimes: [30, 80, 150, 240, 360]
+    },
+    impossible: {
+        label: 'IMPOSSIBLE', rows: 24, cols: 40, mines: 250, cellSize: 28, color: '#bd93f9',
+        multiplierTimes: [60, 160, 300, 480, 720]
     }
 };
+
+// These three must be beaten to unlock Impossible
+const REQUIRED_DIFFICULTIES = ['easy', 'medium', 'hard'];
+
+// Scoring: every revealed tile is worth BASE_SCORE x the current multiplier.
+// The multiplier starts at 5.0x and steps down by 0.8 until it hits the 1.0x floor
+const BASE_SCORE = 100;
+
+const MULTIPLIER_TIERS = [5.0, 4.2, 3.4, 2.6, 1.8, 1.0];
+
+const MULTIPLIER_COLORS = [
+    '#ffd700', // 5.0x: Gold
+    '#f1fa8c', // 4.2x: Pastel Yellow
+    '#50fa7b', // 3.4x: Pastel Green
+    '#8be9fd', // 2.6x: Pastel Blue
+    '#aaaaaa', // 1.8x: Light Grey
+    '#777777'  // 1.0x: Grey
+];
 
 const NUMBER_COLORS = [
     '',        
@@ -37,364 +72,235 @@ const NUMBER_COLORS = [
 
 // Global Variables
 
-const game = new Phaser.Game(config);
-
-let isGameOver = false;
-let board = [];
-
-let flagsPlaced = 0;
-let counterText;
-let isFirstClick = true;
-let statusText;
-
-let timerSeconds = 0;
-let timerText;
-let timerEvent;
-let mainScene;
+let settings = { muted: false, animations: true };
 
 // ------------------------------------- //
 
-// Functions
+// Saved Progress (localStorage)
 
-function createCell(row, col) {
-    return {
-        row: row,
-        col: col,
-        isMine: false,
-        isRevealed: false,
-        isFlagged: false,
-        neighborMines: 0
-    };
-}
+// The try/catch is there because some browsers block localStorage (private mode, etc.)
 
-function initializeBoard() {
-    
-    board = [];
+function getBeatenDifficulties() {
+    try {
+        let saved = localStorage.getItem(STORAGE_KEY);
 
-    for ( let m = 0; m < ROWS; m++) {
-        let newRow = [];
-
-        for ( let n = 0; n < COLS; n++)  newRow.push(createCell(m, n));
-        
-        board.push(newRow);
+        if (saved) return JSON.parse(saved);
+    } catch (error) {
+        console.log("Could not read saved progress.");
     }
 
-    console.log("Test: Board initialized:");
-
+    return [];
 }
 
-function plantMines(firstClickRow, firstClickCol) {
-    let minesPlanted = 0;
+function saveBeatenDifficulty(difficultyKey) {
+    let beaten = getBeatenDifficulties();
 
-    while (minesPlanted < TOTAL_MINES) {
-        let randomRow = Math.floor(Math.random() * ROWS);
-        let randomCol = Math.floor(Math.random() * COLS);
+    if (beaten.includes(difficultyKey)) return;
 
-        if (board[randomRow][randomCol].isMine === false && 
-           !(randomRow === firstClickRow && randomCol === firstClickCol)) {
-            
-            board[randomRow][randomCol].isMine = true;
-            minesPlanted++;
-        }
+    beaten.push(difficultyKey);
+
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(beaten));
+    } catch (error) {
+        console.log("Could not save progress.");
     }
 }
 
-function calculateNeighbors() {
+function isImpossibleUnlocked() {
+    let beaten = getBeatenDifficulties();
 
-    // Coordinates for the 8 neighboring cells
-
-    const directions = [
-        [-1, -1], [-1, 0], [-1, 1], // Top Left, Top, Top Right
-        [0, -1],           [0, 1], // Left, Right
-        [1, -1], [1, 0], [1, 1] // Bottom Left, Bottom, Bottom Right
-    ];
-
-    for (let row = 0; row < ROWS; row++) {
-        for (let col = 0; col < COLS; col++) {
-
-            // Cel is mine - skip
-            if (board[row][col].isMine) continue;
-
-            let mineCount = 0;
-
-            // Check 
-
-            for (let i = 0; i < directions.length; i++) {
-                let neighborRow = row + directions[i][0];
-                let neighborCol = col + directions[i][1];
-
-                // Boundary check:
-
-                if (neighborRow >= 0 && neighborRow < ROWS && neighborCol >= 0 && neighborCol < COLS) {
-                    // Check if mine
-                    if (board[neighborRow][neighborCol].isMine) mineCount++;
-                    
-                    }
-                
-            }
-
-            board[row][col].neighborMines = mineCount;
-        }
-
+    for (let i = 0; i < REQUIRED_DIFFICULTIES.length; i++) {
+        if (!beaten.includes(REQUIRED_DIFFICULTIES[i])) return false;
     }
 
+    return true;
 }
 
+// Saved Settings (mute / animations)
 
-function revealCell(row, col) {
-    if (isGameOver) return;
-    if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return;
-    
-    let cell = board[row][col];
-    if (cell.isRevealed || cell.isFlagged) return;
+function loadSettings() {
+    try {
+        let saved = localStorage.getItem(SETTINGS_KEY);
 
-    // --- FIRST CLICK SAFETY LOGIC ---
-    if (isFirstClick) {
-        plantMines(row, col); 
-        calculateNeighbors(); 
-        
-
-        for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-                let currentCell = board[r][c];
-                
-                if (currentCell.isMine) {
-                    currentCell.textSprite.setText("M");
-                    currentCell.textSprite.setColor("#ff0000");
-                } else if (currentCell.neighborMines > 0) {
-                    currentCell.textSprite.setText(currentCell.neighborMines.toString());
-                    currentCell.textSprite.setColor(NUMBER_COLORS[currentCell.neighborMines]);
-                }
-            }
-        }
-
-        timerEvent = mainScene.time.addEvent({
-            delay: 1000,
-            callback: updateTimer,
-            loop: true
-        });
-
-        statusText.setText("Playing!");
-        statusText.setColor("#bd93f9"); 
-
-        // debugBoardToConsole(); // DEBUGGING PURPOSES ONLY - REMOVE IN PRODUCTION
-        
-        isFirstClick = false; 
-    }
-
-    cell.isRevealed = true;
-    cell.sprite.fillColor = 0x2b2b2b; 
-    if (cell.textSprite) cell.textSprite.setVisible(true);
-
-    if (cell.isMine) {
-        handleGameOver();
-        return; 
-    }
-    
-    if (cell.neighborMines === 0) {
-        const directions = [
-            [-1, -1], [-1, 0], [-1, 1],
-            [ 0, -1],          [ 0, 1],
-            [ 1, -1], [ 1, 0], [ 1, 1]
-        ];
-
-        for (let i = 0; i < directions.length; i++) {
-            let nextRow = row + directions[i][0];
-            let nextCol = col + directions[i][1];
-            revealCell(nextRow, nextCol);
-        }
-    }
-    
-    if (!isGameOver) checkWinCondition();
-}
-function toggleFlag(row, col) {
-    if (isGameOver) return;
-
-    let cell = board[row][col];
-
-    if (cell.isRevealed) return;
-
-    if (!cell.isFlagged && flagsPlaced >= TOTAL_MINES) {
-        return; 
-    }
-
-    cell.isFlagged = !cell.isFlagged;
-
-    if (cell.isFlagged) {
-        cell.sprite.fillColor = 0xffaa00; 
-        flagsPlaced++; 
-    } else {
-        cell.sprite.fillColor = 0x555555; 
-        flagsPlaced--; 
-    }
-
-    if (counterText) {
-        counterText.setText(`Mines: ${TOTAL_MINES - flagsPlaced}`);
+        if (saved) settings = Object.assign(settings, JSON.parse(saved));
+    } catch (error) {
+        console.log("Could not read saved settings.");
     }
 }
 
-function handleGameOver() {
-    isGameOver = true;
-    console.log("Game Over.");
-
-    if (statusText) {
-        statusText.setText("You LOST!");
-        statusText.setColor("#ff5555"); 
-    }
-
-    for (let row = 0; row < ROWS; row++) {
-        for (let col = 0; col < COLS; col++) {
-            let cell = board[row][col];
-            
-            if (cell.isMine) {
-
-                cell.sprite.fillColor = 0xffcccc; 
-                if (cell.textSprite) cell.textSprite.setVisible(true);
-            }
-        }
+function saveSettings() {
+    try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch (error) {
+        console.log("Could not save settings.");
     }
 }
 
-function checkWinCondition() {
-    let safeCellsRevealed = 0;
-    const totalSafeCells = (ROWS * COLS) - TOTAL_MINES;
+// ------------------------------------- //
 
-    for (let row = 0; row < ROWS; row++) {
-        for (let col = 0; col < COLS; col++) {
-            if (board[row][col].isRevealed && !board[row][col].isMine) {
-                safeCellsRevealed++;
-            }
-        }
-    }
+// Shared Helpers
 
-    if (safeCellsRevealed === totalSafeCells) {
-        isGameOver = true;
-        console.log("GG!");
-
-        if (statusText) {
-            statusText.setText("YOU WON!");
-            statusText.setColor("#f1fa8c");
-        }
-        
-
-        for (let row = 0; row < ROWS; row++) {
-            for (let col = 0; col < COLS; col++) {
-                if (board[row][col].isMine) {
-                    board[row][col].sprite.fillColor = 0x00ff00;
-                }
-            }
-        }
-    }
+function playSound(scene, soundKey) {
+    scene.sound.play(soundKey, { volume: 0.6 });
 }
 
-function debugBoardToConsole() {
-    console.log("Current Minesweeper Board:");
-    for (let row = 0; row < ROWS; row++) {
-        let rowString = "";
-        for (let col = 0; col < COLS; col++) {
+// Sizes the canvas for the current screen. It only ever scales DOWN to fit the window,
+// never up, because stretching the canvas past its real size is what makes text blurry
 
-            if (board[row][col].isMine) 
-                rowString += " * ";
-
-            else 
-                rowString += ` ${board[row][col].neighborMines} `;
-        }
-        console.log(rowString);
-    }
+function resizeGame(scene, width, height) {
+    scene.scale.displaySize.setAspectRatio(width / height);
+    scene.scale.displaySize.setMax(width, height);
+    scene.scale.resize(width, height);
+    scene.scale.refresh();
 }
 
-function updateTimer() {
-    if (!isGameOver) {
-        timerSeconds++;
-        timerText.setText(`Timer: ${timerSeconds} secs`);
-    } else {
-        if (timerEvent) timerEvent.remove();
-    }
+// Quick fade in whenever a screen opens
+
+function fadeInScene(scene) {
+    scene.isLeaving = false;
+
+    if (settings.animations) scene.cameras.main.fadeIn(250, 27, 27, 27);
 }
 
+// Quick fade out, then switch screens (works for restarting the same screen too)
 
-// ------------------------------ //
+function changeScene(scene, sceneKey, data) {
 
-function createScene() {
-    mainScene = this;
-    this.input.mouse.disableContextMenu();
-    isGameOver = false; 
-    isFirstClick = true; 
-    flagsPlaced = 0;
+    // Ignore extra clicks while a fade is already happening
+    if (scene.isLeaving) return;
+    scene.isLeaving = true;
 
+    if (!settings.animations) {
+        scene.scene.start(sceneKey, data);
+        return;
+    }
 
-    initializeBoard();
+    scene.cameras.main.fadeOut(180, 27, 27, 27);
+    scene.cameras.main.once('camerafadeoutcomplete', () => {
+        scene.scene.start(sceneKey, data);
+    });
+}
 
-    statusText = this.add.text((COLS * CELL_SIZE) / 2, TOP_UI_HEIGHT / 2, "Click to Play", {
-        fontSize: '48px',
-        color: '#ffffff',
+// Fades something in (optionally sliding up from slideY pixels away)
+
+function fadeInObject(scene, object, delay, slideY) {
+    if (!settings.animations) return;
+
+    let endY = object.y;
+
+    object.setAlpha(0);
+    object.y = endY + (slideY || 0);
+
+    scene.tweens.add({
+        targets: object,
+        alpha: 1,
+        y: endY,
+        duration: 300,
+        delay: delay || 0,
+        ease: 'Cubic.easeOut'
+    });
+}
+
+// Draws a clickable button. "options" is optional:
+// width, height, fontSize, detail (small second line), fadeDelay (fade in after this many ms)
+// Returns the button so its label can be changed later (button.label.setText(...))
+
+function createButton(scene, x, y, label, textColor, onClick, options) {
+    options = options || {};
+
+    let width = options.width || BTN_WIDTH;
+    let height = options.height || BTN_HEIGHT;
+    let fontSize = options.fontSize || 36;
+
+    let button = scene.add.container(x, y);
+
+    let rect = scene.add.rectangle(0, 0, width, height, 0x444444);
+    rect.setInteractive({ useHandCursor: true });
+
+    // Buttons with a detail line push the label up a little to make room
+    let labelY = options.detail ? -12 : 0;
+
+    let labelText = scene.add.text(0, labelY, label, {
+        fontSize: fontSize + 'px',
+        color: textColor,
         fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    for (let row = 0; row < ROWS; row++) {
-        for (let col = 0; col < COLS; col++) {
-            let xPos = (col * CELL_SIZE) + CELL_SIZE / 2;
-            let yPos = (row * CELL_SIZE) + TOP_UI_HEIGHT + CELL_SIZE / 2;
+    button.add([rect, labelText]);
+    button.label = labelText;
 
-            
-            let visualRect = this.add.rectangle(xPos, yPos, CELL_SIZE - 4, CELL_SIZE - 4, 0x555555);
-            visualRect.setInteractive();
+    if (options.detail) {
+        let detailText = scene.add.text(0, 24, options.detail, {
+            fontSize: '18px',
+            color: '#aaaaaa'
+        }).setOrigin(0.5);
 
-            visualRect.on('pointerdown', function (pointer) {
-                if (pointer.rightButtonDown()) {
-                    toggleFlag(row, col);
-                } else {
-                    revealCell(row, col);
-                }
-            });
-
-            board[row][col].sprite = visualRect;
-
-
-            let visualText = this.add.text(xPos, yPos, "", {
-                fontSize: '22px',
-                fontStyle: 'bold'
-            }).setOrigin(0.5);
-
-            visualText.setVisible(false);
-            board[row][col].textSprite = visualText;
-        }
+        button.add(detailText);
     }
 
-    timerSeconds = 0;
-    if (timerEvent) timerEvent.remove();
-
-    let btnX = (COLS * CELL_SIZE) / 2;
-    let btnY = TOP_UI_HEIGHT + (ROWS * CELL_SIZE) + (UI_HEIGHT / 2);
-
-    let restartBtn = this.add.rectangle(btnX, btnY, BTN_WIDTH, BTN_HEIGHT, 0x444444);
-    restartBtn.setInteractive();
-
-    this.add.text(btnX, btnY, "RESTART", {
-        fontSize: '36px',
-        color: '#b06161',
-        fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    restartBtn.on('pointerover', () => restartBtn.fillColor = 0x666666);
-    restartBtn.on('pointerout', () => restartBtn.fillColor = 0x444444);
-
-    restartBtn.on('pointerdown', () => {
-        console.log("Restarting Game...");
-        this.scene.restart();
+    // Hover: lighter color and a tiny grow
+    rect.on('pointerover', () => {
+        rect.fillColor = 0x666666;
+        growButton(scene, button, 1.05);
     });
 
-    
-    counterText = this.add.text(20, btnY, `Mines: ${TOTAL_MINES - flagsPlaced}`, {
-        fontSize: '32px',
-        color: '#81eb57', 
-        fontStyle: 'bold'
-    }).setOrigin(0, 0.5); 
+    rect.on('pointerout', () => {
+        rect.fillColor = 0x444444;
+        growButton(scene, button, 1);
+    });
 
-    timerText = this.add.text(config.width - 20, btnY, `Timer: 0 secs`, {
-        fontSize: '26px',
-        color: '#8be9fd', 
-        fontStyle: 'bold'
-    }).setOrigin(0.9, 0.5); 
+    rect.on('pointerdown', () => {
+        playSound(scene, 'click');
+        onClick();
+    });
 
+    if (options.fadeDelay !== undefined) fadeInObject(scene, button, options.fadeDelay, 14);
+
+    return button;
 }
+
+function growButton(scene, button, scale) {
+    if (!settings.animations) return;
+
+    if (button.growTween) button.growTween.stop();
+
+    button.growTween = scene.tweens.add({
+        targets: button,
+        scale: scale,
+        duration: 90
+    });
+}
+
+// ------------------------------------- //
+
+// Start the game once every script has loaded
+
+function startGame() {
+    loadSettings();
+
+    const config = {
+        type: Phaser.AUTO,
+        parent: 'game',
+        width: MENU_WIDTH,
+        height: MENU_HEIGHT,
+        backgroundColor: '#1B1B1B',
+        render: { roundPixels: true },
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        scene: [
+            { key: 'BootScene',       preload: preloadAssets,  create: createBootScene },
+            { key: 'MenuScene',       create: createMenuScene },
+            { key: 'SettingsScene',   create: createSettingsScene },
+            { key: 'DifficultyScene', create: createDifficultyScene },
+            { key: 'GameScene',       create: createGameScene }
+        ]
+    };
+
+    new Phaser.Game(config);
+
+    console.log("%cPsst... the kitchen is open. Try ordering something by name. \uD83C\uDF70", 'color: #ff79c6; font-size: 14px;');
+}
+
+window.addEventListener('load', startGame);
